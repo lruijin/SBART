@@ -195,10 +195,10 @@ void Node::AddLeaves(Hypers& hypers) {
   left->right = left;
   left->left = left;
   left->var = 0;
-  left->val = hypers.sim ? hypers.Z.min() : 0.0;
+  left->val = 0.0;
   left->is_root = false;
-  left->lower = hypers.sim ? hypers.Z.min() : 0.0;
-  left->upper = hypers.sim ? hypers.Z.max() : 1.0;
+  left->lower = 0.0;
+  left->upper = 1.0;
   left->mu = 0.0;
   left->current_weight = 0.0;
   left->tau = tau;
@@ -207,10 +207,10 @@ void Node::AddLeaves(Hypers& hypers) {
   right->right = right;
   right->left = right;
   right->var = 0;
-  right->val = hypers.sim ? hypers.Z.min() : 0.0;
+  right->val = 0.0;
   right->is_root = false;
-  right->lower = hypers.sim ? hypers.Z.min() : 0.0;
-  right->upper = hypers.sim ? hypers.Z.max() : 1.0;
+  right->lower = 0.0;
+  right->upper = 1.0;
   right->mu = 0.0;
   right->current_weight = 0.0;
   right->tau = tau;
@@ -261,8 +261,8 @@ bool Node::is_left() {
 
 void Node::GetLimits(Hypers& hypers) {
   Node* y = this;
-  lower = hypers.sim ? hypers.Z.min() : 0.0;
-  upper = hypers.sim ? hypers.Z.max() : 1.0;
+  lower = 0.0;
+  upper = 1.0;
   bool my_bool = y->is_root ? false : true;
   // if not root then do following
   while(my_bool) { 
@@ -615,7 +615,7 @@ Rcpp::List do_soft_bart(const arma::mat& X,
   //
   // Do save iterations
   for(int i = 0; i < opts.num_save; i++) {
-    Rcout << "Iteration # " << i << "\n";
+    // Rcout << "Iteration # " << i << "\n";
     for(int b = 0; b < opts.num_thin; b++) {
       if(hypers.sim) {
         hypers.UpdateTheta(forest, Y, weights, X, X_test, hypers, opts.theta_width); //Use X instead of Z
@@ -705,12 +705,12 @@ void IterateGibbsNoS(std::vector<Node*>& forest, arma::vec& Y_hat,
                      Hypers& hypers, const arma::mat& X, const arma::vec& Y,
                      const Opts& opts) {
   
-  Rcout << "In IterateGibbs";
+  // Rcout << "In IterateGibbs";
   TreeBackfit(forest, Y_hat, weights, hypers, X, Y, opts); 
   arma::vec res = Y - Y_hat;
   arma::vec means = get_means(forest);
 
-  Rcout << "Doing other updates";
+  // Rcout << "Doing other updates";
   if(opts.update_sigma) hypers.UpdateSigma(res, weights);
   if(opts.update_sigma_mu) hypers.UpdateSigmaMu(means);
   if(opts.update_beta) hypers.UpdateBeta(forest);
@@ -732,11 +732,6 @@ void TreeBackfit(std::vector<Node*>& forest, arma::vec& Y_hat,
   int num_tree = hypers.num_tree;
   for(int t = 0; t < num_tree; t++) {
     // Rcout << "Inside backfit \n";
-    //to make sure each node (both leaf and branch) get updated with lower and upper
-    // forest[t]->SetLowerUpper(hypers);
-    // forest[t]->val = hypers.sim ? hypers.Z.min() : 0.0;
-    // forest[t]->lower = hypers.sim ? hypers.Z.min() : 0.0;
-    // forest[t]->upper = hypers.sim ? hypers.Z.max() : 1.0;
     
     arma::vec Y_star = Y_hat - predict(forest[t], X, hypers);
     arma::vec res = Y - Y_star;
@@ -2208,18 +2203,17 @@ void Hypers::UpdateTheta(const std::vector<Node*>& forest,
   }
 
   eta = theta2eta(hypers);
+  
+  /* Rescale Z to make them in the scope of (0,1) interval*/
   Z = X * eta; // Compute single index
   Z_test = X_test * eta; // Compute single index
+  
+  int n = X.n_rows;
+  int n_test = X_test.n_rows;
+  
+  arma::mat Z_trans = quantile_normalize_bart(join_cols(Z,Z_test));
+  Z = Z_trans.rows(0,n-1);
+  Z_test = Z_trans.rows(n, n+n_test-1);
 }
 
-// To update lower, upper, and val properties of a tree to match the updated Z limits
-void Node::SetLowerUpper(Hypers& hypers) {
-  val = hypers.sim ? hypers.Z.min() : 0.0;
-  lower = hypers.sim ? hypers.Z.min() : 0.0;
-  upper = hypers.sim ? hypers.Z.max() : 1.0;
-  if(!is_leaf) {
-    left->SetLowerUpper(hypers);
-    right->SetLowerUpper(hypers); 
-  }
-}
 

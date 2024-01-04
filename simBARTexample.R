@@ -2,8 +2,8 @@
 # install_github("theodds/SoftBART")
 library(SoftBart)
 library(Rcpp)
-sourceCpp("src/soft_bart.cpp")
-source("R/SoftBart.R")
+sourceCpp("soft_bart.cpp")
+source("SoftBart.R")
 # data used in Park et al (2005) and Dhara et al (2020).
 data("airquality")
 air = airquality[complete.cases(airquality),]

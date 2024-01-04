@@ -82,3 +82,28 @@ double log_truncated_normal_pdf(double x, double mu, double sigma, double lower,
 }
 
 #endif
+
+/* Quantile Normalize indices */
+arma::vec trank(arma::vec x) {
+  arma::vec x_unique = unique(x);
+  int J = x_unique.size();
+  arma::vec x_ranks = arma::regspace(0, J-1);
+  int I = x.size();
+  for(int i = 0; i < I; i++){
+    arma::uvec ind = find(x_unique == x(i));
+    x(i) = x_ranks(ind(0)) / J;
+  }
+  x = x / max(x);
+  return x;
+}
+
+// [[Rcpp::export]]
+arma::mat quantile_normalize_bart(arma::mat X) {
+  int P = X.n_cols;
+  for(int i = 0; i < P; i++){
+    X.col(i) = trank(X.col(i));
+  }
+  
+  return(X);
+}
+
