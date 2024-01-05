@@ -1,7 +1,8 @@
 # library(devtools)
 # install_github("theodds/SoftBART")
-library(SoftBart)
+# library(SoftBart)
 library(Rcpp)
+library(RcppArmadillo)
 sourceCpp("soft_bart.cpp")
 source("SoftBart.R")
 # data used in Park et al (2005) and Dhara et al (2020).
@@ -13,7 +14,7 @@ Y = air$Ozone
 X_test = air[,c("Solar.R","Wind","Temp")]
 
 fit_air = simbart2(X = X, Y = Y, X_test = X_test, 
-                hypers = Hypers(X, Y, num_tree = 50, sigma_hat = NULL, sim = T),
+                hypers = Hypers(X, Y, num_tree = 50, sigma_hat = NULL, sim = F),
                 opts = Opts(num_burn = 500, num_save = 500, 
                             theta_width = 0.3,
                             update_sigma_mu = FALSE,

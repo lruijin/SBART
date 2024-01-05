@@ -24,3 +24,16 @@ gen_data <- function(n_train, n_test, P, func, eta, sigma){
 
 rmse <- function(x,y) sqrt(mean((x-y)^2))
 mae <- function(x,y) mean(abs(x-y))
+
+# transform eta to theta
+eta2theta <- function(eta){
+  P = length(eta)
+  theta = eta[1:(P - 1)]
+  theta[1] = asin(eta[1])
+  dem = cos(theta[1])
+  for(i in 2: (P-1)){
+    theta[i] = asin(theta[i] / dem)
+    dem = dem * cos(theta[i])
+  }
+  return(theta)
+}

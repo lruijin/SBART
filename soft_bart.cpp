@@ -108,9 +108,9 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
   out.sim = sim;
   
   if(sim) {
-    arma::vec eta = arma::zeros<arma::vec>(theta.size());
+    arma::vec eta = arma::zeros<arma::vec>(theta.size() + 1);
     eta(0) = 1.0;
-    for (unsigned int j = 1; j < theta.size(); j++) {
+    for (unsigned int j = 1; j < (theta.size() + 1); j++) {
       eta(j) = eta(j-1) * cos(theta(j-1));
       eta(j-1) *= sin(theta(j-1));
     }
@@ -2044,7 +2044,7 @@ RCPP_MODULE(mod_forest) {
 ///////////////////////////////////////////////////////////
 // Convert theta to eta
 arma::vec theta2eta(const Hypers& hypers) {
-  int p = hypers.theta.size(); //last element of theta is not used in this function
+  int p = hypers.theta.size() + 1; //theta is one dimensional less than eta
   arma::vec eta = arma::zeros<arma::vec>(p);  
   eta(0) = 1;
   

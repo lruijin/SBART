@@ -79,8 +79,8 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
   out$num_tree_prob                    <- num_tree_prob
   out$temperature                      <- temperature
   
-  out$theta                            <- rep(pi/4,ncol(X))
-  out$theta[ncol(X)]                   <- pi/2 # A constant and will not be actually used in computing eta
+  out$theta                            <- rep(pi/4,ncol(X)-1)
+  # out$theta[ncol(X)]                   <- pi/2 # A constant and will not be actually used in computing eta
   out$sim                              <- sim
   
   return(out)
