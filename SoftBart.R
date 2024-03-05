@@ -22,14 +22,16 @@
 #' @param temperature The temperature applied to the posterior distribution; set to 1 unless you know what you are doing.
 #' @param weights Only used by the function \code{softbart}, this is a vector of weights to be used in heteroskedastic regression models, with the variance of an observation given by \code{sigma_sq / weight}.
 #' @param normalize_Y Do you want to compute \code{sigma_hat} after applying the standard BART max/min normalization to \eqn{(-0.5, 0.5)} for the outcome? If \code{FALSE}, no normalization is applied. This might be useful for fitting custom models where the outcome is normalized by hand.
-#' @param theta SIM coefficients.
+#' @param sim Boolean variable if SIM model is used.
+#' @param sparse Boolean variable if SIM coefficients are sparse.
 #'
 #' @return Returns a list containing the function arguments.
 Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
                    sigma_hat = NULL, shape = 1, width = 0.1, num_tree = 20,
                    alpha_scale = NULL, alpha_shape_1 = 0.5,
                    alpha_shape_2 = 1, tau_rate = 10, num_tree_prob = NULL,
-                   temperature = 1.0, weights = NULL, normalize_Y = TRUE, sim = TRUE) {
+                   temperature = 1.0, weights = NULL, normalize_Y = TRUE, sim = TRUE,
+                   sparse = F, prq = rep(0.1, ncol(X)-1), M1 = 0.1, M2 = 100) {
   # browser()
   
   if(!sim) {
@@ -78,10 +80,17 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
   out$tau_rate                         <- tau_rate
   out$num_tree_prob                    <- num_tree_prob
   out$temperature                      <- temperature
+  out$theta                           <- rep(pi/4,ncol(X)-1)
+  if(sparse){
+    out$delta                           <- rbinom(ncol(X) - 1, 1, prq)
+    out$theta[out$delta == 0]           <- pi/2
+  }
+  out$prq                             <- prq
+  out$M1                              <- M1
+  out$M2                              <- M2
   
-  out$theta                            <- rep(pi/4,ncol(X)-1)
-  # out$theta[ncol(X)]                   <- pi/2 # A constant and will not be actually used in computing eta
   out$sim                              <- sim
+  out$sparse                           <- sparse
   
   return(out)
   
@@ -109,6 +118,7 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
 #'
 #' @return Returns a list containing the function arguments.
 Opts <- function(num_burn = 2500, num_thin = 1, theta_width = 0.5, num_save = 2500, num_print = 100,
+                 num_update_theta = 100, update_theta_width = 0.2,
                  update_sigma_mu = TRUE, update_s = FALSE, update_alpha = FALSE,
                  update_beta = FALSE, update_gamma = FALSE, update_tau = TRUE,
                  update_tau_mean = FALSE, update_sigma = TRUE,
@@ -121,6 +131,8 @@ Opts <- function(num_burn = 2500, num_thin = 1, theta_width = 0.5, num_save = 25
   out$theta_width     <- theta_width
   out$num_save        <- num_save
   out$num_print       <- num_print
+  out$num_update_theta <- num_update_theta
+  out$update_theta_width <-  update_theta_width
   out$update_sigma_mu <- update_sigma_mu
   out$update_s        <- update_s
   out$update_alpha    <- update_alpha
@@ -279,11 +291,14 @@ simbart2 <- function(X, Y, X_test, hypers = NULL, opts = Opts(), verbose = TRUE)
                   hypers$weights,
                   hypers$theta,
                   hypers$sim,
+                  hypers$sparse,
                   opts$num_burn,
                   opts$num_thin,
                   opts$num_save,
                   opts$theta_width,
                   opts$num_print,
+                  opts$num_update_theta, 
+                  opts$update_theta_width,
                   opts$update_sigma_mu,
                   opts$update_s,
                   opts$update_alpha,
@@ -292,7 +307,10 @@ simbart2 <- function(X, Y, X_test, hypers = NULL, opts = Opts(), verbose = TRUE)
                   opts$update_tau,
                   opts$update_tau_mean,
                   opts$update_num_tree,
-                  opts$update_sigma) #,
+                  opts$update_sigma,
+                  hypers$prq,
+                  hypers$M1,
+                  hypers$M2) #,
   #                  opts$update_theta)
   
   a <- min(Y)

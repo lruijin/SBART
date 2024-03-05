@@ -2,7 +2,6 @@
 #define SOFT_BART_H
 // [[Rcpp::depends(RcppArmadillo)]]
 #include <RcppArmadillo.h>
-
 #include "functions.h"
 
 struct Hypers;
@@ -25,15 +24,20 @@ struct Hypers {
   arma::vec s;
   arma::vec theta;
   arma::vec eta;
+  arma::vec delta;
   arma::vec Z;
   arma::vec Z_test;
   arma::vec logs;
   arma::uvec group;
   bool sim;
+  bool sparse;
+  arma::vec prq;
+  double M1;
+  double M2;
   
   arma::vec rho_propose;
   
-  std::vector<std::vector<unsigned int> > group_to_vars;
+  std::vector<std::vector<unsigned int>> group_to_vars;
   
   double sigma_hat;
   double sigma_mu_hat;
@@ -54,7 +58,15 @@ struct Hypers {
                    const arma::mat& X_test,
                    Hypers& hypers,
                    const double& s);
+  void UpdateTheta_sparse(const std::vector<Node*>& forest, 
+                          const arma::vec& Y,
+                          const arma::vec& weights,
+                          const arma::mat& X, const arma::mat& X_test,
+                          Hypers& hypers,
+                          const double& s);
+  void UpdateDelta();
   void SetTheta(arma::vec theta_new);
+  void SetDelta(arma::vec delta_new);
   //void loglik_Theta(const std::vector<Node*>& forest);
   
   // For updating tau
@@ -124,7 +136,8 @@ struct Opts {
   double theta_width;
   int num_save;
   int num_print;
-  
+  int num_update_theta;
+  double update_theta_width;
   bool update_sigma_mu;
   bool update_s;
   bool update_alpha;
@@ -135,18 +148,23 @@ struct Opts {
   bool update_num_tree;
   bool update_sigma;
   bool cache_trees;
+
   //bool update_theta;
+  
+  void setThetaWidth(double theta_width_new); 
   
   Opts() : update_sigma_mu(true), update_s(true), update_alpha(true),
   update_beta(false), update_gamma(false), update_tau(true),
   update_tau_mean(false), update_num_tree(false), 
-  update_sigma(true), cache_trees(false) {
+  update_sigma(true), cache_trees(false){
     
     num_burn = 1;
     num_thin = 1;
     theta_width = 0.5;
     num_save = 1;
     num_print = 100;
+    num_update_theta = 100;
+    update_theta_width = 0.2;
     
   }
   
@@ -165,6 +183,8 @@ struct Opts {
     num_thin = opts_["num_thin"];
     num_save = opts_["num_save"];
     num_print = opts_["num_print"];
+    num_update_theta = opts_["num_update_theta"];
+    update_theta_width = opts_["update_theta_width"];
     cache_trees = opts_["cache_trees"];
     theta_width= opts_["theta_width"];
     //update_theta = opts_["update_theta"];
@@ -209,12 +229,11 @@ public:
 };
 
 
-Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save, int num_print,
+Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save, 
+              int num_print, int num_update_theta, double update_theta_width,
               bool update_sigma_mu, bool update_s, bool update_alpha,
               bool update_beta, bool update_gamma, bool update_tau,
-              bool update_tau_mean, bool update_num_tree, 
-              bool update_sigma);
-
+              bool update_tau_mean, bool update_num_tree, bool update_sigma);
 
 // Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, const uvec& group, double sigma_hat, double alpha, double beta,
 //                   double gamma, double k, double width, double shape,
@@ -227,7 +246,8 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, const arma::uvec&
                   double gamma, double k, double width, double shape,
                   int num_tree, double alpha_scale, double alpha_shape_1,
                   double alpha_shape_2, double tau_rate, double num_tree_prob,
-                  double temperature, arma::vec theta, bool sim);
+                  double temperature, arma::vec theta, bool sim,
+                  bool sparse, arma::vec prq, double M1, double M2);
 
 void GetSuffStats(Node* n, const arma::vec& y, const arma::vec& weights,
                   const arma::mat& X, const Hypers& hypers,
@@ -293,20 +313,20 @@ Rcpp::List do_soft_bart(const arma::mat& X,
                         const arma::vec& Y,
                         const arma::vec& weights,
                         const arma::mat& X_test,
-                        const Hypers& hypers,
-                        const Opts& opts);
+                        Hypers& hypers,
+                        Opts& opts);
 
 void IterateGibbsWithS(std::vector<Node*>& forest, arma::vec& Y_hat, const arma::vec& weights,
                        Hypers& hypers, const arma::mat& X, const arma::vec& Y,
-                       const Opts& opts);
+                       Opts& opts);
 void IterateGibbsNoS(std::vector<Node*>& forest, arma::vec& Y_hat,
                      const arma::vec& weights,
                      Hypers& hypers, const arma::mat& X, const arma::vec& Y,
-                     const Opts& opts);
+                     Opts& opts);
 void TreeBackfit(std::vector<Node*>& forest, arma::vec& Y_hat,
                  const arma::vec& weights,
                  Hypers& hypers, const arma::mat& X, const arma::vec& Y,
-                 const Opts& opts);
+                 Opts& opts);
 double activation(double x, double c, double tau);
 void birth_death(Node* tree, const arma::mat& X, const arma::vec& Y,
                  const arma::vec& weights, Hypers& hypers);
@@ -345,15 +365,19 @@ double logprior_tau(double tau, double tau_rate);
 double tau_proposal(double tau);
 double log_tau_trans(double tau_new);
 arma::vec get_tau_vec(const std::vector<Node*>& forest);
-
+// For sparse theta
+bool do_mh_prior(double loglik_new, double loglik_old,
+                 double new_to_old, double old_to_new,
+                 double prior_new, double prior_old);
+arma::vec sampleBernoulli(arma::vec prob);
 // RJMCMC for trees
 std::vector<Node*> TreeSwap(std::vector<Node*>& forest);
 std::vector<Node*> TreeSwapLast(std::vector<Node*>& forest);
 std::vector<Node*> AddTree(std::vector<Node*>& forest,
-                           Hypers& hypers, const Opts& opts);
+                           Hypers& hypers, Opts& opts);
 std::vector<Node*> DeleteTree(std::vector<Node*>& forest);
 void update_num_tree(std::vector<Node*>& forest, Hypers& hypers,
-                     const Opts& opts,
+                     Opts& opts,
                      const arma::vec& Y, const arma::vec& res,
                      const arma::mat& X);
 double LogLF(const std::vector<Node*>& forest, const Hypers& hypers,
@@ -361,7 +385,7 @@ double LogLF(const std::vector<Node*>& forest, const Hypers& hypers,
 double loglik_normal(const arma::vec& resid, const double& sigma);
 void BirthTree(std::vector<Node*>& forest,
                Hypers& hypers,
-               const Opts& opts,
+               Opts& opts,
                const arma::vec& Y,
                const arma::vec& res,
                const arma::mat& X);

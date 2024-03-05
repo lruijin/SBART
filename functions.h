@@ -2,7 +2,7 @@
 #define FUNCTIONS_H
 
 #include <RcppArmadillo.h>
-
+#include <cmath>
 int sample_class(const arma::vec& probs) {
   double U = R::unif_rand();
   double foo = 0.0;
@@ -107,3 +107,41 @@ arma::mat quantile_normalize_bart(arma::mat X) {
   return(X);
 }
 
+/*
+ * This function is used to calculate the density function of shifted beta
+ * distribution with the support of [a, c]. The shape parameter and scale 
+ * parameter are alpha and beta respectively.
+ */
+
+// [[Rcpp::export]]
+double dbeta(double theta, double alpha, double beta){
+  double res = 0.0;
+  if(theta >= 0 && theta <= 1){
+    res = pow(theta, alpha - 1) * pow(1 - theta, beta - 1) * 
+      (std::tgamma(alpha + beta)/std::tgamma(alpha)/std::tgamma(beta));
+  }
+  
+  return(res);
+}
+
+// [[Rcpp::export]]
+double log_dbeta(double theta, double alpha, double beta){
+  return(log(dbeta(theta, alpha, beta)));
+}
+
+/* This function is used to sample for Bernoulli distribution from a vector of 
+ * probabilities stored in prob
+ */
+// [[Rcpp::export]]
+arma::vec sampleBernoulli(arma::vec prob) {
+  arma::vec uniformSamples = arma::randu<arma::vec>(prob.n_elem);
+  arma::vec bernoulliSamples = arma::zeros<arma::vec>(prob.n_elem);
+  
+  for(unsigned int i = 0; i < prob.n_elem; i++) {
+    if (uniformSamples[i] < prob[i]) {
+      bernoulliSamples[i] = 1;
+    }
+  }
+  
+  return bernoulliSamples;
+}
