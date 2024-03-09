@@ -67,6 +67,7 @@ struct Hypers {
   void UpdateDelta();
   void SetTheta(arma::vec theta_new);
   void SetDelta(arma::vec delta_new);
+  void SetPrq(arma::vec prq_new);
   //void loglik_Theta(const std::vector<Node*>& forest);
   
   // For updating tau
@@ -137,6 +138,7 @@ struct Opts {
   int num_save;
   int num_print;
   int num_update_theta;
+  int expTrue;
   double update_theta_width;
   bool update_sigma_mu;
   bool update_s;
@@ -164,6 +166,7 @@ struct Opts {
     num_save = 1;
     num_print = 100;
     num_update_theta = 100;
+    expTrue = 3;
     update_theta_width = 0.2;
     
   }
@@ -187,6 +190,7 @@ struct Opts {
     update_theta_width = opts_["update_theta_width"];
     cache_trees = opts_["cache_trees"];
     theta_width= opts_["theta_width"];
+    expTrue = opts_["expTrue"];
     //update_theta = opts_["update_theta"];
   }
   
@@ -230,7 +234,7 @@ public:
 
 
 Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save, 
-              int num_print, int num_update_theta, double update_theta_width,
+              int num_print, int num_update_theta, int expTrue, double update_theta_width,
               bool update_sigma_mu, bool update_s, bool update_alpha,
               bool update_beta, bool update_gamma, bool update_tau,
               bool update_tau_mean, bool update_num_tree, bool update_sigma);

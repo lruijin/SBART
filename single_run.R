@@ -4,7 +4,8 @@ source("SoftBart.R")
 source("data_func.R")
 
 single_run <- function(seed, eta, sigma, func, n_train, n_test, theta_width = 0.2,
-                       load.data = F, update_theta_width = 0.05, sparse = sparse){
+                       load.data = F, update_theta_width = 0.2, sparse = F, 
+                       prq = rep(0.01,P-1), expTrue = 3){
     P = length(eta)
     theta = eta2theta(eta)
     set.seed(1234 + seed)
@@ -13,12 +14,12 @@ single_run <- function(seed, eta, sigma, func, n_train, n_test, theta_width = 0.
     if(load.data){
         load(paste0("data/", func,"_P", P, "_sigma",
                     sub("\\.", "", paste0(sigma*10)),
-                    "_n", n_train, "/sample", i, ".Rdata"))
+                    "_n", n_train, "/sample", seed, ".Rdata"))
     }else{
         sim_data <- gen_data(n_train, n_test, P, func, eta, sigma)
         save(sim_data, file = paste0("data/", func,"_P", P, "_sigma",
                                      sub("\\.", "", paste0(sigma*10)),
-                                     "_n", n_train, "/sample", i, ".Rdata"))
+                                     "_n", n_train, "/sample", seed, ".Rdata"))
     }
     
     for(j in 1:5){
@@ -27,12 +28,12 @@ single_run <- function(seed, eta, sigma, func, n_train, n_test, theta_width = 0.
         tStart = Sys.time()
         fit = simbart2(X = sim_data$X, Y = sim_data$Y, X_test = sim_data$X_test, 
                        hypers = Hypers(sim_data$X, sim_data$Y, num_tree = 10, 
-                                       sigma_hat = NULL, sim = T, sparse = T,
-                                       prq = rep(0.01,P-1)),
+                                       sigma_hat = NULL, sim = T, sparse = sparse,
+                                       prq = prq),
                        opts = Opts(num_burn = 4000, num_save = 2000, num_print = 500,
-                                   num_thin = 1, num_update_theta = 500,
+                                   num_thin = 1, num_update_theta = 400, expTrue = expTrue,
                                    theta_width = theta_width, # for beta distribution 5,
-                                   update_theta_width = 0.05, # 0.2 if sparse = F, P = 5
+                                   update_theta_width = update_theta_width, # 0.2 if sparse = F, P = 5
                                    update_sigma_mu = FALSE,
                                    update_s = FALSE,
                                    update_alpha = FALSE,
@@ -81,9 +82,9 @@ single_run <- function(seed, eta, sigma, func, n_train, n_test, theta_width = 0.
              "theta.est", "sse_theta",
              "acc.rate", "rmse_simBart_train", "rmse_simBart_test", 
              "mae_simBart_train", "mae_simBart_test", "sel",
-             file = paste0("results/", func,"_P", P, "_sigma",
+             file = paste0("results_sparse/", func,"_P", P, "_sigma",
                            sub("\\.", "", paste0(sigma*10)),
-                           "_n", n_train, "/result", i, ".Rdata"))
+                           "_n", n_train, "/result", seed, ".Rdata"))
     }else{
         save("Time", "eta", "theta", "theta.CI.lower", "theta.CI.upper", 
              "eta.CI.lower", "eta.CI.upper", 
@@ -93,7 +94,7 @@ single_run <- function(seed, eta, sigma, func, n_train, n_test, theta_width = 0.
              "mae_simBart_train", "mae_simBart_test", 
              file = paste0("results/", func,"_P", P, "_sigma",
                            sub("\\.", "", paste0(sigma*10)),
-                           "_n", n_train, "/result", i, ".Rdata")) 
+                           "_n", n_train, "/result", seed, ".Rdata")) 
     }
     
 }

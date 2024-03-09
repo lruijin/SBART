@@ -81,10 +81,7 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
   out$num_tree_prob                    <- num_tree_prob
   out$temperature                      <- temperature
   out$theta                           <- rep(pi/4,ncol(X)-1)
-  if(sparse){
-    out$delta                           <- rbinom(ncol(X) - 1, 1, prq)
-    out$theta[out$delta == 0]           <- pi/2
-  }
+  
   out$prq                             <- prq
   out$M1                              <- M1
   out$M2                              <- M2
@@ -118,7 +115,7 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
 #'
 #' @return Returns a list containing the function arguments.
 Opts <- function(num_burn = 2500, num_thin = 1, theta_width = 0.5, num_save = 2500, num_print = 100,
-                 num_update_theta = 100, update_theta_width = 0.2,
+                 num_update_theta = 100, expTrue = 3, update_theta_width = 0.2,
                  update_sigma_mu = TRUE, update_s = FALSE, update_alpha = FALSE,
                  update_beta = FALSE, update_gamma = FALSE, update_tau = TRUE,
                  update_tau_mean = FALSE, update_sigma = TRUE,
@@ -132,6 +129,7 @@ Opts <- function(num_burn = 2500, num_thin = 1, theta_width = 0.5, num_save = 25
   out$num_save        <- num_save
   out$num_print       <- num_print
   out$num_update_theta <- num_update_theta
+  out$expTrue          <- expTrue
   out$update_theta_width <-  update_theta_width
   out$update_sigma_mu <- update_sigma_mu
   out$update_s        <- update_s
@@ -298,6 +296,7 @@ simbart2 <- function(X, Y, X_test, hypers = NULL, opts = Opts(), verbose = TRUE)
                   opts$theta_width,
                   opts$num_print,
                   opts$num_update_theta, 
+                  opts$expTrue,
                   opts$update_theta_width,
                   opts$update_sigma_mu,
                   opts$update_s,

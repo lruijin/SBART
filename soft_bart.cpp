@@ -43,7 +43,7 @@ Node::Node() {
 }
 
 Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save, 
-              int num_print, int num_update_theta, double update_theta_width,
+              int num_print, int num_update_theta, int expTrue, double update_theta_width,
               bool update_sigma_mu, bool update_s, bool update_alpha,
               bool update_beta, bool update_gamma, bool update_tau,
               bool update_tau_mean, bool update_num_tree, bool update_sigma) {
@@ -55,6 +55,7 @@ Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save,
   out.num_save = num_save;
   out.num_print = num_print;
   out.num_update_theta = num_update_theta;
+  out.expTrue = expTrue;
   out.update_theta_width = update_theta_width;
   out.update_sigma_mu = update_sigma_mu;
   out.update_s = update_s;
@@ -120,10 +121,8 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
   
   if(sim) {
     if(sparse) { 
-      arma::vec thetap = theta;
-      int len1 = thetap.size();
+      int len1 = theta.size();
       arma::vec delta = sampleBernoulli(prq);
-      
       for(int i = 0; i < len1; i++){
         if(delta(i) == 0){
           theta(i) = M_PI/2;
@@ -134,8 +133,8 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
     arma::vec eta = arma::zeros<arma::vec>(theta.size() + 1);
     eta(0) = 1.0;
     for (unsigned int j = 1; j < (theta.size() + 1); j++) {
-      eta(j) = eta(j-1) * cos(theta(j-1));
-      eta(j-1) *= sin(theta(j-1));
+      eta(j) = eta(j-1) * sin(theta(j-1));
+      eta(j-1) *= cos(theta(j-1));
     }
     out.eta = eta;
     out.Z = X * eta;
@@ -598,6 +597,8 @@ Rcpp::List do_soft_bart(const arma::mat& X,
 
   vec Y_hat = zeros<vec>(X.n_rows);
   mat theta_burn = zeros<mat>(opts.num_burn, hypers.theta.size());
+  mat delta_burn = zeros<mat>(opts.num_burn, hypers.theta.size());
+  
   int j = 1;
   // Do burn_in
   for(int i = 0; i < opts.num_burn; i++) {
@@ -606,6 +607,8 @@ Rcpp::List do_soft_bart(const arma::mat& X,
       if(hypers.sparse){
         hypers.UpdateTheta_sparse(forest, Y, weights, X, X_test, hypers, opts.theta_width);
         hypers.UpdateDelta();
+        delta_burn.row(i) = trans(hypers.delta);
+        // Rcout << "In the sparse loop " << i << "\n";
       }else{
         hypers.UpdateTheta(forest, Y, weights, X, X_test, hypers, opts.theta_width); //Use X instead of Z
       }
@@ -626,6 +629,7 @@ Rcpp::List do_soft_bart(const arma::mat& X,
     if(((i+1) > opts.num_update_theta) & ((i+1) % opts.num_update_theta == 0)) {
       double acc_rate = sum(diff(theta_burn(span(opts.num_update_theta-1,i),0)) != 0)/
         (opts.num_update_theta*j + 0.0);
+      
       if(acc_rate < 0.15) {
         double theta_width_new = opts.theta_width * (1-opts.update_theta_width); //For normal
         //double theta_width_new = opts.theta_width * (1+opts.update_theta_width); // For beta
@@ -633,13 +637,43 @@ Rcpp::List do_soft_bart(const arma::mat& X,
         Rcout << "acc rate is " << acc_rate << "Shorten step width of theta to " 
         << opts.theta_width << "\n";
       }
-      if(acc_rate > 0.25) {
+      if(acc_rate > 0.35) {
         double theta_width_new = opts.theta_width * (1+opts.update_theta_width); //For normal
         // double theta_width_new = opts.theta_width * (1-opts.update_theta_width); // For beta
         opts.setThetaWidth(theta_width_new);
         Rcout << "acc rate is " << acc_rate << "Lengthen step width of theta to "
         << opts.theta_width << "\n";
       }
+      if(hypers.sparse){
+        arma::rowvec emp_sel = sum(delta_burn.rows(opts.num_update_theta-1,i),0);
+        uword minI = emp_sel.index_min();
+        int tmpI = 0;
+        // Rcout << "Smallest dimension is " << minI << "\n";
+        uvec maxI = sort_index(emp_sel, "descend");
+        double exp_sel = mean(sum(delta_burn.rows(opts.num_update_theta-1,i),1));
+
+        if(exp_sel < opts.expTrue - 0.5){
+          // hypers.M2 = hypers.M2-2;
+          // hypers.prq(minI) = hypers.prq(minI)*2;
+          for(int p = 0; p < opts.expTrue; p++){
+            tmpI = maxI(p);
+            hypers.prq(tmpI) = hypers.prq(tmpI) / 1.2;
+          }
+          // Rcout << "Expected selection is " << exp_sel << ". Increase prq of "
+          //       << minI << "\n";
+        }
+        if(exp_sel > opts.expTrue + 0.5){
+          hypers.prq(minI) = hypers.prq(minI)/2;
+          // for(int p = 0; p < opts.expTrue; p++){
+          //   tmpI = maxI(p);
+          //   hypers.prq(tmpI) = hypers.prq(tmpI) * 1.2;
+          // }
+          // hypers.M2 = hypers.M2+2;
+          // Rcout << "Expected selection is " << exp_sel << ". Decrease prq of  "
+          //       << minI << "\n";
+        }
+      }
+      
       j += 1;
     }
   }
@@ -1487,26 +1521,26 @@ List SoftBart(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
               double temperature, const arma::vec& weights, arma::vec& theta,
               bool sim, bool sparse, int num_burn,
               int num_thin, int num_save, double theta_width, int num_print, 
-              int num_update_theta, double update_theta_width, 
+              int num_update_theta, int expTrue, double update_theta_width, 
               bool update_sigma_mu,
               bool update_s, bool update_alpha, bool update_beta, bool update_gamma,
               bool update_tau, bool update_tau_mean, bool update_num_tree,
               bool update_sigma, arma::vec prq, double M1, double M2) {
   
-  // Rcout << "Doing Opts\n";
+   Rcout << "Doing Opts\n";
   Opts opts = InitOpts(num_burn, num_thin, theta_width, num_save, num_print,
-                       num_update_theta, update_theta_width, update_sigma_mu,
+                       num_update_theta, expTrue, update_theta_width, update_sigma_mu,
                        update_s, update_alpha, update_beta, update_gamma,
                        update_tau, update_tau_mean, update_num_tree,
                        update_sigma);
   
-  // Rcout << "Doing Hyper\n";
+   Rcout << "Doing Hyper\n";
   Hypers hypers = InitHypers(X, X_test, group, sigma_hat, alpha, beta, gamma, k, width,
                              shape, num_tree, alpha_scale, alpha_shape_1,
                              alpha_shape_2, tau_rate, num_tree_prob, temperature, theta, sim,
                              sparse, prq, M1, M2);
 
-  // Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
+   Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
   return do_soft_bart(X, Y, weights, X_test, hypers, opts);
   // List out;
   // out["Y"] = Y;
@@ -2252,6 +2286,10 @@ arma::vec theta_proposal_normal(arma::vec theta_center, const double& s){
 
 void Hypers::SetTheta(arma::vec theta_new) {
   theta = theta_new;
+}
+
+void Hypers::SetPrq(arma::vec prq_new){
+  prq = prq_new;
 }
 
 // X is X, not Z

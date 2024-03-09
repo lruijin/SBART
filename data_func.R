@@ -27,7 +27,7 @@ mae <- function(x,y) mean(abs(x-y))
 
 # transform eta to theta
 eta2theta <- function(eta){
-  P = length(eta)
+  P = length(eta) - 1
   theta = eta[1:P]
   theta[1] = acos(eta[1])
   dem = sin(theta[1])
