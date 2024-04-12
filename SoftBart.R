@@ -31,7 +31,7 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
                    alpha_scale = NULL, alpha_shape_1 = 0.5,
                    alpha_shape_2 = 1, tau_rate = 10, num_tree_prob = NULL,
                    temperature = 1.0, weights = NULL, normalize_Y = TRUE, sim = TRUE,
-                   sparse = F, prq = rep(0.1, ncol(X)-1), M1 = 0.1, M2 = 100) {
+                   sparse = F, prq = rep(0.1, ncol(X)-1), M1 = 0.1, M2 = 10) {
   # browser()
   
   if(!sim) {

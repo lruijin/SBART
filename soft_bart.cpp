@@ -603,6 +603,7 @@ Rcpp::List do_soft_bart(const arma::mat& X,
   // Do burn_in
   for(int i = 0; i < opts.num_burn; i++) {
     // Rcout << "Iteration # " << i << "\n";
+    
     if(hypers.sim) {
       if(hypers.sparse){
         hypers.UpdateTheta_sparse(forest, Y, weights, X, X_test, hypers, opts.theta_width);
@@ -646,10 +647,9 @@ Rcpp::List do_soft_bart(const arma::mat& X,
       }
       if(hypers.sparse){
         arma::rowvec emp_sel = sum(delta_burn.rows(opts.num_update_theta-1,i),0);
-        uword minI = emp_sel.index_min();
         int tmpI = 0;
-        // Rcout << "Smallest dimension is " << minI << "\n";
         uvec maxI = sort_index(emp_sel, "descend");
+        uvec minI = sort_index(emp_sel, "ascend");
         double exp_sel = mean(sum(delta_burn.rows(opts.num_update_theta-1,i),1));
 
         if(exp_sel < opts.expTrue - 0.5){
@@ -657,20 +657,19 @@ Rcpp::List do_soft_bart(const arma::mat& X,
           // hypers.prq(minI) = hypers.prq(minI)*2;
           for(int p = 0; p < opts.expTrue; p++){
             tmpI = maxI(p);
-            hypers.prq(tmpI) = hypers.prq(tmpI) / 1.2;
+            hypers.prq(tmpI) = hypers.prq(tmpI) * 2;
           }
           // Rcout << "Expected selection is " << exp_sel << ". Increase prq of "
-          //       << minI << "\n";
+          //       << maxI << "\n";
         }
         if(exp_sel > opts.expTrue + 0.5){
-          hypers.prq(minI) = hypers.prq(minI)/2;
-          // for(int p = 0; p < opts.expTrue; p++){
-          //   tmpI = maxI(p);
-          //   hypers.prq(tmpI) = hypers.prq(tmpI) * 1.2;
-          // }
-          // hypers.M2 = hypers.M2+2;
-          // Rcout << "Expected selection is " << exp_sel << ". Decrease prq of  "
-          //       << minI << "\n";
+          // hypers.prq(maxI(maxI.size()-2)) = hypers.prq(maxI(maxI.size()-2))/2;
+          for(int p = 0; p < (minI.size() - opts.expTrue); p++){
+            tmpI = minI(p);
+            hypers.prq(tmpI) = hypers.prq(tmpI) / 2;
+          }
+          // Rcout << "Expected selection is " << exp_sel << ". Decrease prq of "
+          //       << maxI << "\n";
         }
       }
       
@@ -752,7 +751,8 @@ Rcpp::List do_soft_bart(const arma::mat& X,
   for(int t = 0; t < hypers.num_tree; t++) {
     num_leaves_final(t) = leaves(forest[t]).size();
   }
-
+  
+  
   List out;
   out["y_hat_train"] = Y_hat_train;
   out["y_hat_test"] = Y_hat_test;
@@ -1527,20 +1527,20 @@ List SoftBart(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
               bool update_tau, bool update_tau_mean, bool update_num_tree,
               bool update_sigma, arma::vec prq, double M1, double M2) {
   
-   Rcout << "Doing Opts\n";
+  // Rcout << "Doing Opts\n";
   Opts opts = InitOpts(num_burn, num_thin, theta_width, num_save, num_print,
                        num_update_theta, expTrue, update_theta_width, update_sigma_mu,
                        update_s, update_alpha, update_beta, update_gamma,
                        update_tau, update_tau_mean, update_num_tree,
                        update_sigma);
   
-   Rcout << "Doing Hyper\n";
+   // Rcout << "Doing Hyper\n";
   Hypers hypers = InitHypers(X, X_test, group, sigma_hat, alpha, beta, gamma, k, width,
                              shape, num_tree, alpha_scale, alpha_shape_1,
                              alpha_shape_2, tau_rate, num_tree_prob, temperature, theta, sim,
                              sparse, prq, M1, M2);
 
-   Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
+  // Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
   return do_soft_bart(X, Y, weights, X_test, hypers, opts);
   // List out;
   // out["Y"] = Y;
@@ -1551,6 +1551,7 @@ List SoftBart(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
   // return out;
   
 }
+
 
 // [[Rcpp::export]]
 bool do_mh(double loglik_new, double loglik_old,
@@ -1569,6 +1570,13 @@ bool do_mh_prior(double loglik_new, double loglik_old,
   
   double cutoff = loglik_new + new_to_old + prior_new - 
     loglik_old - old_to_new - prior_old;
+  // Rcout << "loglik_new is "<< loglik_new <<"\n";
+  // Rcout << "new_to_old is "<< new_to_old <<"\n";
+  // Rcout << "prior_new is "<< prior_new <<"\n";
+  // Rcout << "loglik_old is "<< loglik_old <<"\n";
+  // Rcout << "old_to_new is "<< old_to_new <<"\n";
+  // Rcout << "prior_old is "<< prior_old <<"\n";
+  // Rcout << "cutoff is "<< cutoff <<"\n";
   
   return log(unif_rand()) < cutoff ? true : false;
   
@@ -2275,12 +2283,12 @@ double loglik_Theta(const std::vector<Node*>& forest, arma::vec theta_new, const
 
 arma::vec theta_proposal_normal(arma::vec theta_center, const double& s){
   arma::vec theta_new = theta_center;
-  for(unsigned int j = 0; j < theta_new.size() - 1; j++) {
-    double modeJ = theta_center(j);
+  double modeJ = theta_center(0);
+  // theta_new(0) = truncated_normal_arma(modeJ, s, 0, M_PI/2);
+  for(unsigned int j = 0; j < theta_new.size(); j++) {
+    modeJ = theta_center(j);
     theta_new(j) = truncated_normal_arma(modeJ, s, 0, M_PI);
   }
-  int lastidx = theta_new.size() - 1;
-  theta_new(lastidx) = truncated_normal_arma(theta_center(lastidx), s, 0, 2*M_PI);
   return theta_new;
 }
 
@@ -2304,16 +2312,13 @@ void Hypers::UpdateTheta(const std::vector<Node*>& forest,
   arma::vec mode_old = theta_old;
   arma::vec theta_new = theta_proposal_normal(mode_old, s);
   arma::vec mode_new = theta_new;
-  int last_idx = theta_old.size()-1;
+  int last_idx = theta_old.size();
   double new_to_old = log_truncated_normal_pdf(theta_old(0), mode_new(0), s, 0, M_PI);
   double old_to_new = log_truncated_normal_pdf(theta_new(0), mode_old(0), s, 0, M_PI);
   for(int j = 1; j < last_idx; j++) {
     new_to_old = new_to_old + log_truncated_normal_pdf(theta_old(j), mode_new(j), s, 0, M_PI);
     old_to_new = old_to_new + log_truncated_normal_pdf(theta_new(j), mode_old(j), s, 0, M_PI);
   }
-  
-  new_to_old = new_to_old + log_truncated_normal_pdf(theta_old(last_idx), mode_new(last_idx), s, 0, 2*M_PI);
-  old_to_new = old_to_new + log_truncated_normal_pdf(theta_new(last_idx), mode_old(last_idx), s, 0, 2*M_PI);
   /* The following code is for proposing by beta distribution
   arma::vec theta_center_old = find_theta_center(forest, Y, weights, X, hypers, theta_old);
   arma::vec d_old = find_beta_d(theta_center_old,s);
@@ -2374,13 +2379,11 @@ void Hypers::UpdateTheta_sparse(const std::vector<Node*>& forest,
   double new_to_old = log_truncated_normal_pdf(theta_old(0), mode_new(0), s, 0, M_PI);
   double old_to_new = log_truncated_normal_pdf(theta_new(0), mode_old(0), s, 0, M_PI);
   
-  for(int j = 1; j < p-1; j++) {
+  for(int j = 1; j < p; j++) {
     new_to_old = new_to_old + log_truncated_normal_pdf(theta_old(j), mode_new(j), s, 0, M_PI);
     old_to_new = old_to_new + log_truncated_normal_pdf(theta_new(j), mode_old(j), s, 0, M_PI);
   }
   
-  new_to_old = new_to_old + log_truncated_normal_pdf(theta_old(p-1), mode_new(p-1), s, 0, 2*M_PI);
-  old_to_new = old_to_new + log_truncated_normal_pdf(theta_new(p-1), mode_old(p-1), s, 0, 2*M_PI);
   
   double lprior_old = 0.0;
   double lprior_new = 0.0;
@@ -2388,26 +2391,23 @@ void Hypers::UpdateTheta_sparse(const std::vector<Node*>& forest,
   double sh1 = 0.0;
   double sh2 = 0.0;
   for(int j = 0; j < p; j++){
-    if(j == (p-1)){
-      thetap = thetap - M_PI/2*(thetap > M_PI/2) - M_PI/2*(thetap > M_PI) - M_PI/2*(thetap > 3*M_PI/2);
-      thetap = (M_PI / 4 - abs(thetap-M_PI/4))/(M_PI/4);
-    }else{
-      thetap = (M_PI / 2 - abs(theta_old(j)-M_PI/2))/(M_PI/2);
-    }
+    thetap = 1.0 - fabs(theta_old(j)-M_PI/2)/(M_PI/2);
     sh1 = (1-delta(j)) * M1 + delta(j);
     sh2 = (1-delta(j)) * M2 + delta(j);
     lprior_old = lprior_old + log_dbeta(thetap, sh1, sh2);
-    if(j == (p-1)){
-      thetap = thetap - M_PI/2*(thetap > M_PI/2) - M_PI/2*(thetap > M_PI) - M_PI/2*(thetap > 3*M_PI/2);
-      thetap = (M_PI / 4 - abs(thetap-M_PI/4))/(M_PI/4);
-    }else{
-      thetap = (M_PI / 2 - abs(theta_new(j)-M_PI/2))/(M_PI/2);
-    }
+    // Rcout << "Old theta - "<< j+1 << ": " << theta_old(j)<< 
+    //   " standardized as " << thetap << " with prior " <<
+    //   log_dbeta(thetap, sh1, sh2)<< "\n";
+    thetap = 1.0 - fabs(theta_new(j)-M_PI/2)/(M_PI/2);
     lprior_new = lprior_new + log_dbeta(thetap, sh1, sh2);
+    
+    // Rcout << "New theta - "<< j+1 << ": " << theta_new(j) << 
+    //   " standardized as " << thetap << " with prior " <<
+    //   log_dbeta(thetap, sh1, sh2) << "\n";
   }
   
-  // Rcout << "\nlog prior of old = " << lprior_old << "\n";
-  // Rcout << "\nlog prior of new = " << lprior_new << "\n";
+   // Rcout << "\nlog prior of old = " << lprior_old << "\n";
+   // Rcout << "\nlog prior of new = " << lprior_new << "\n";
   /* The following code is for proposing by beta distribution
    arma::vec theta_center_old = find_theta_center(forest, Y, weights, X, hypers, theta_old);
    arma::vec d_old = find_beta_d(theta_center_old,s);
@@ -2458,14 +2458,9 @@ void Hypers::UpdateDelta() {
   arma::vec thetap = theta;
   arma::vec prp = prq;
   int len1 = thetap.size();
-  for(int i = 0; i < len1-1; i++){
-    thetap(i) = (M_PI / 2 - abs(thetap(i)-M_PI/2))/(M_PI/2);
+  for(int i = 0; i < len1; i++){
+    thetap(i) = (M_PI / 2 - fabs(thetap(i)-M_PI/2))/(M_PI/2);
   }
-  
-  double temp = thetap(len1 - 1);
-  temp = temp - M_PI/2*(temp > M_PI/2) - M_PI/2*(temp > M_PI) - M_PI/2*(temp > 3*M_PI/2);
-  temp = (M_PI/4 - abs(temp-M_PI/4))/(M_PI/4);
-  thetap(len1-1) = temp;
   
   for(int i = 0; i < len1; i ++){
     /* This step updates*/

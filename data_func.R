@@ -37,3 +37,12 @@ eta2theta <- function(eta){
   }
   return(theta)
 }
+
+theta2eta <- function(theta){
+  eta = cos(theta[1])
+  for(i in 2:length(theta)){
+    eta = c(eta,
+            cos(theta[i]) * prod(sin(theta[1:(i-1)])))
+  }
+  eta = c(eta, prod(sin(theta)))
+}
