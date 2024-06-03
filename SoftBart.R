@@ -26,7 +26,7 @@
 #' @param sparse Boolean variable if SIM coefficients are sparse.
 #'
 #' @return Returns a list containing the function arguments.
-Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
+Hypers <- function(X,V = NULL, Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
                    sigma_hat = NULL, shape = 1, width = 0.1, num_tree = 20,
                    alpha_scale = NULL, alpha_shape_1 = 0.5,
                    alpha_shape_2 = 1, tau_rate = 10, num_tree_prob = NULL,
@@ -42,6 +42,7 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
   
   if(is.null(num_tree_prob)) num_tree_prob <- 2.0 / num_tree
   if(is.null(weights)) weights <- rep(1, length(Y))
+  sim_cov = ifelse(is.null(V), F, T)
   
   out                                  <- list()
   out$weights                          <- weights
@@ -53,16 +54,22 @@ Hypers <- function(X,Y, group = NULL, alpha = 1, beta = 2, gamma = 0.95, k = 2,
   out$num_tree                         <- num_tree
   out$shape                            <- shape
   out$width                            <- width
+  out$sim_cov                          <- sim_cov
   
-  if(!sim) {
-    if(is.null(group)) {
+  if(sim){
+    if(sim_cov){
+      out$group = 0:ncol(V)
+    }else{
+      out$group = 0L
+    }
+  }else{
+    if(is.null(groups)){
       out$group                          <- 1:ncol(X) - 1
-    } else {
+    }else{
       out$group                          <- group - 1
     }
-  } else {
-    out$group                            <- 0L # the single index Z will have only one column
-  }  
+  }
+  
   
   if(normalize_Y) {
     Y                                  <- normalize_bart(Y)
@@ -236,11 +243,16 @@ unnormalize_bart <- function(z, a, b) {
 #' rmse(fit$y_hat_test_mean, sim_data$mu_test)
 #' rmse(fit$y_hat_train_mean, sim_data$mu)
 #' 
-simbart2 <- function(X, Y, X_test, hypers = NULL, opts = Opts(), verbose = TRUE) {
+simbart2 <- function(X, V = NULL, Y, X_test, V_test = NULL, hypers = NULL, opts = Opts(), verbose = TRUE) {
   #browser()
-  
+  # X = sim_data$X
+  # V = NULL
+  # Y = sim_data$Y
+  # X_test = sim_data$X_test
+  # V_test = sim_data$V_test
+  # hypers = NULL
   if(is.null(hypers)){
-    hypers <- Hypers(X,Y)
+    hypers <- Hypers(X,V,Y)
   }
   
   ## Normalize Y
@@ -269,48 +281,94 @@ simbart2 <- function(X, Y, X_test, hypers = NULL, opts = Opts(), verbose = TRUE)
   X_test <- X_trans[-idx_train,,drop=FALSE]
   
   #browser()
-  fit <- SoftBart(X,Ynorm,X_test,
-                  hypers$group,
-                  hypers$alpha,
-                  hypers$beta,
-                  hypers$gamma,
-                  hypers$sigma,
-                  hypers$shape,
-                  hypers$width,
-                  hypers$num_tree,
-                  hypers$sigma_hat,
-                  hypers$k,
-                  hypers$alpha_scale,
-                  hypers$alpha_shape_1,
-                  hypers$alpha_shape_2,
-                  hypers$tau_rate,
-                  hypers$num_tree_prob,
-                  hypers$temperature,
-                  hypers$weights,
-                  hypers$theta,
-                  hypers$sim,
-                  hypers$sparse,
-                  opts$num_burn,
-                  opts$num_thin,
-                  opts$num_save,
-                  opts$theta_width,
-                  opts$num_print,
-                  opts$num_update_theta, 
-                  opts$expTrue,
-                  opts$update_theta_width,
-                  opts$update_sigma_mu,
-                  opts$update_s,
-                  opts$update_alpha,
-                  opts$update_beta,
-                  opts$update_gamma,
-                  opts$update_tau,
-                  opts$update_tau_mean,
-                  opts$update_num_tree,
-                  opts$update_sigma,
-                  hypers$prq,
-                  hypers$M1,
-                  hypers$M2) #,
-  #                  opts$update_theta)
+  if(hypers$sim_cov){
+    fit <- SoftBart_cov(X,Ynorm,X_test,V,V_test,
+                    hypers$group,
+                    hypers$alpha,
+                    hypers$beta,
+                    hypers$gamma,
+                    hypers$sigma,
+                    hypers$shape,
+                    hypers$width,
+                    hypers$num_tree,
+                    hypers$sigma_hat,
+                    hypers$k,
+                    hypers$alpha_scale,
+                    hypers$alpha_shape_1,
+                    hypers$alpha_shape_2,
+                    hypers$tau_rate,
+                    hypers$num_tree_prob,
+                    hypers$temperature,
+                    hypers$weights,
+                    hypers$theta,
+                    hypers$sim,
+                    hypers$sparse,
+                    hypers$sim_cov,
+                    opts$num_burn,
+                    opts$num_thin,
+                    opts$num_save,
+                    opts$theta_width,
+                    opts$num_print,
+                    opts$num_update_theta, 
+                    opts$expTrue,
+                    opts$update_theta_width,
+                    opts$update_sigma_mu,
+                    opts$update_s,
+                    opts$update_alpha,
+                    opts$update_beta,
+                    opts$update_gamma,
+                    opts$update_tau,
+                    opts$update_tau_mean,
+                    opts$update_num_tree,
+                    opts$update_sigma,
+                    hypers$prq,
+                    hypers$M1,
+                    hypers$M2) 
+  }else{
+    fit <- SoftBart(X,Ynorm,X_test,
+                    hypers$group,
+                    hypers$alpha,
+                    hypers$beta,
+                    hypers$gamma,
+                    hypers$sigma,
+                    hypers$shape,
+                    hypers$width,
+                    hypers$num_tree,
+                    hypers$sigma_hat,
+                    hypers$k,
+                    hypers$alpha_scale,
+                    hypers$alpha_shape_1,
+                    hypers$alpha_shape_2,
+                    hypers$tau_rate,
+                    hypers$num_tree_prob,
+                    hypers$temperature,
+                    hypers$weights,
+                    hypers$theta,
+                    hypers$sim,
+                    hypers$sparse,
+                    hypers$sim_cov,
+                    opts$num_burn,
+                    opts$num_thin,
+                    opts$num_save,
+                    opts$theta_width,
+                    opts$num_print,
+                    opts$num_update_theta, 
+                    opts$expTrue,
+                    opts$update_theta_width,
+                    opts$update_sigma_mu,
+                    opts$update_s,
+                    opts$update_alpha,
+                    opts$update_beta,
+                    opts$update_gamma,
+                    opts$update_tau,
+                    opts$update_tau_mean,
+                    opts$update_num_tree,
+                    opts$update_sigma,
+                    hypers$prq,
+                    hypers$M1,
+                    hypers$M2) 
+  }
+  
   
   a <- min(Y)
   b <- max(Y)

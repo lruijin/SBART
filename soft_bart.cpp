@@ -12,7 +12,7 @@ Forest::Forest(Rcpp::List hypers_, Rcpp::List opts_) : hypers(hypers_), opts(opt
   saved_forests.resize(0);
   for(int i = 0; i < hypers.num_tree; i++) {
     trees[i] = new Node();
-    trees[i]->Root(hypers);
+    trees[i]-> Root(hypers);
     // trees[i]->GenTree(hypers);
   }
   num_gibbs = 0;
@@ -76,14 +76,14 @@ void Opts::setThetaWidth(double theta_width_new) {
   theta_width = theta_width_new;
 }
 
-Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, 
+Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
                   const arma::uvec& group, double sigma_hat,
                   double alpha, double beta,
                   double gamma, double k, double width, double shape,
                   int num_tree, double alpha_scale, double alpha_shape_1,
                   double alpha_shape_2, double tau_rate, double num_tree_prob,
                   double temperature, arma::vec theta, bool sim, bool sparse,
-                  arma::vec prq, double M1, double M2) {
+                  bool sim_cov, arma::vec prq, double M1, double M2) {
   
   int GRID_SIZE = 1000;
   
@@ -113,6 +113,7 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
   
   out.group = group;
   out.sim = sim;
+  out.sim_cov = sim_cov;
   out.sparse = sparse;
   out.prq = prq;
   out.M1 = M1;
@@ -137,13 +138,109 @@ Hypers InitHypers(const arma::mat& X, const arma::mat& X_test,
       eta(j-1) *= cos(theta(j-1));
     }
     out.eta = eta;
-    out.Z = X * eta;
-    out.Z_test = X_test * eta;
+    int n = X.n_rows;
+    int n_test = X_test.n_rows;
+    arma::mat Z_trans = quantile_normalize_bart(join_cols(X * eta,X_test * eta));
+    out.Z = Z_trans.rows(0,n-1);
+    out.Z_test = Z_trans.rows(n, n+n_test-1);
     
     // out.num_groups = 1L; // Z in SIM has only one column
   }
   out.theta = theta;
   
+  // Create mapping of group to variables
+  out.group_to_vars.resize(out.s.size());
+  for(unsigned int i = 0; i < out.s.size(); i++) {
+    out.group_to_vars[i].resize(0);
+  }
+  int P = group.size();
+  for(int p = 0; p < P; p++) {
+    int idx = group(p);
+    out.group_to_vars[idx].push_back(p);
+  }
+  
+  out.rho_propose = zeros<vec>(GRID_SIZE - 1);
+  for(int i = 0; i < GRID_SIZE - 1; i++) {
+    out.rho_propose(i) = (double)(i+1) / (double)(GRID_SIZE);
+  }
+  
+  return out;
+}
+
+Hypers InitHypers_cov(const arma::mat& X, const arma::mat& X_test,
+                  const arma::mat& V, const arma::mat& V_test,
+                  const arma::uvec& group, double sigma_hat,
+                  double alpha, double beta,
+                  double gamma, double k, double width, double shape,
+                  int num_tree, double alpha_scale, double alpha_shape_1,
+                  double alpha_shape_2, double tau_rate, double num_tree_prob,
+                  double temperature, arma::vec theta, bool sim, bool sparse,
+                  bool sim_cov, arma::vec prq, double M1, double M2) {
+  
+  int GRID_SIZE = 1000;
+  
+  Hypers out;
+  out.alpha = alpha;
+  out.beta = beta;
+  out.gamma = gamma;
+  out.sigma = sigma_hat;
+  out.sigma_mu = 0.5 / (k * pow(num_tree, 0.5));
+  out.shape = shape;
+  out.width = width;
+  out.num_tree = num_tree;
+  
+  out.num_groups = group.max() + 1;
+  out.s = ones<vec>(out.num_groups) / ((double)(out.num_groups));
+  out.logs = log(out.s);
+  
+  out.sigma_hat = sigma_hat;
+  out.sigma_mu_hat = out.sigma_mu;
+  
+  out.alpha_scale = alpha_scale;
+  out.alpha_shape_1 = alpha_shape_1;
+  out.alpha_shape_2 = alpha_shape_2;
+  out.tau_rate = tau_rate;
+  out.num_tree_prob = num_tree_prob;
+  out.temperature = temperature;
+  
+  out.group = group;
+  out.sim = sim;
+  out.sim_cov = sim_cov;
+  out.sparse = sparse;
+  out.prq = prq;
+  out.M1 = M1;
+  out.M2 = M2;
+  
+  
+  if(sim) {
+    if(sparse) { 
+      int len1 = theta.size();
+      arma::vec delta = sampleBernoulli(prq);
+      for(int i = 0; i < len1; i++){
+        if(delta(i) == 0){
+          theta(i) = M_PI/2;
+        }
+      }
+      out.delta = delta;
+    }
+    arma::vec eta = arma::zeros<arma::vec>(theta.size() + 1);
+    eta(0) = 1.0;
+    for (unsigned int j = 1; j < (theta.size() + 1); j++) {
+      eta(j) = eta(j-1) * sin(theta(j-1));
+      eta(j-1) *= cos(theta(j-1));
+    }
+    out.eta = eta;
+    int n = X.n_rows;
+    int n_test = X_test.n_rows;
+    arma::mat Z_trans = quantile_normalize_bart(join_cols(X * eta,X_test * eta));
+    out.Z = Z_trans.rows(0,n-1);
+    out.Z_test = Z_trans.rows(n, n+n_test-1);
+    
+    arma::mat V_trans = quantile_normalize_bart(join_cols(V, V_test));
+    out.V = V_trans.rows(0,n-1);
+    out.V_test = V_trans.rows(n, n+n_test-1);
+    out.theta = theta;
+  }
   // Create mapping of group to variables
   out.group_to_vars.resize(out.s.size());
   for(unsigned int i = 0; i < out.s.size(); i++) {
@@ -185,15 +282,18 @@ void Node::Root(Hypers& hypers) {
   parent = this;
   // Rcout << "Inside Root\n";
   var = 0;
-  if(hypers.sim) {
-    val = hypers.Z.min(); //0.0;
-    lower = hypers.Z.min(); //0.0;
-    upper = hypers.Z.max();
-  } else {
-    val = 0.0;
-    lower = 0.0;
-    upper = 1.0;
-  }
+  val = 0.0;
+  lower = 0.0;
+  upper = 1.0;
+  // if(hypers.sim) {
+  //   val = hypers.Z.min(); //0.0;
+  //   lower = hypers.Z.min(); //0.0;
+  //   upper = hypers.Z.max();
+  // } else {
+  //   val = 0.0;
+  //   lower = 0.0;
+  //   upper = 1.0;
+  // }
   tau = hypers.width;
   
   mu = 0.0;
@@ -586,11 +686,19 @@ Rcpp::List do_soft_bart(const arma::mat& X,
   arma::mat Z = X;// * theta2eta(hypers); // Compute single index
   arma::mat Z_test = X_test;// * theta2eta(hypers); // Compute single index
   
+  
   // Rcout << "\nInside do_soft_bart sim = " << hypers.sim << "\n";
 
   if(hypers.sim) {
     Z = hypers.Z; //X * theta2eta(hypers); // Compute single index
     Z_test = hypers.Z_test; //X_test * theta2eta(hypers); // Compute single index
+  }
+  Rcout << "\nCovariate inside tree = " << hypers.sim_cov << "\n";
+  if(hypers.sim_cov){
+    arma::mat V = hypers.V;
+    arma::mat V_test = hypers.V_test;
+    Z = join_rows(Z,V);
+    Z_test = join_rows(Z_test, V_test);
   }
 
   std::vector<Node*> forest = init_forest(Z, Y, hypers);
@@ -615,10 +723,19 @@ Rcpp::List do_soft_bart(const arma::mat& X,
       }
       Z = hypers.Z; //X * theta2eta(hypers); // Compute single index
       Z_test = hypers.Z_test; //X_test * theta2eta(hypers); // Compute single index
+      
+      if(hypers.sim_cov){
+        arma::mat V = hypers.V;
+        // Rcout << "Updating theta and there are " << V.n_cols << " in V \n";
+        arma::mat V_test = hypers.V_test;
+        Z = join_rows(Z,V);
+        Z_test = join_rows(Z_test, V_test);
+      }
       theta_burn.row(i) = trans(hypers.theta);
     }
-    IterateGibbsNoS(forest, Y_hat, weights, hypers, Z, Y, opts);
     
+    IterateGibbsNoS(forest, Y_hat, weights, hypers, Z, Y, opts);
+    // Rcout << "Begin IterateGibbsNoS done \n";
     if((i+1) % opts.num_print == 0) {
       // Rcout << "Finishing warmup " << i + 1 << ": tau = " << hypers.width << "\n";
       Rcout << "Finishing warmup " << i + 1
@@ -664,7 +781,7 @@ Rcpp::List do_soft_bart(const arma::mat& X,
         }
         if(exp_sel > opts.expTrue + 0.5){
           // hypers.prq(maxI(maxI.size()-2)) = hypers.prq(maxI(maxI.size()-2))/2;
-          for(int p = 0; p < (minI.size() - opts.expTrue); p++){
+          for(unsigned int p = 0; p < (minI.size() - opts.expTrue); p++){
             tmpI = minI(p);
             hypers.prq(tmpI) = hypers.prq(tmpI) / 2;
           }
@@ -712,6 +829,28 @@ Rcpp::List do_soft_bart(const arma::mat& X,
         }
         Z = hypers.Z; //X * theta2eta(hypers); // Compute single index
         Z_test = hypers.Z_test; //X_test * theta2eta(hypers); // Compute single index
+        
+        // save Z before join with covariates if any
+        if(hypers.sim) {
+          if(hypers.sparse){
+            delta.row(i) = trans(hypers.delta);
+            prq.row(i) = trans(hypers.prq);
+          }
+          theta.row(i) = trans(hypers.theta);
+          eta.row(i) = trans(hypers.eta);
+          Zmat.row(i) = trans(Z); // Added xxxxx
+          Z_testmat.row(i) = trans(Z_test); //Added by Lu
+          
+          if(hypers.sim_cov){
+            arma::mat V = hypers.V;
+            arma::mat V_test = hypers.V_test;
+            Z = join_rows(Z,V);
+            Z_test = join_rows(Z_test, V_test);
+          }
+        }
+        
+        
+        
       }
       IterateGibbsNoS(forest, Y_hat, weights, hypers, Z, Y, opts);
       // if(hypers.sim) hypers.UpdateTheta(forest, Y, weights, X, hypers); //Use X instead of Z
@@ -732,16 +871,7 @@ Rcpp::List do_soft_bart(const arma::mat& X,
     loglik_train.row(i) = trans(loglik_data(Y,weights,Y_hat,hypers));
     loglik(i) = sum(loglik_train.row(i));
     num_tree(i) = hypers.num_tree;
-    if(hypers.sim) {
-      if(hypers.sparse){
-        delta.row(i) = trans(hypers.delta);
-        prq.row(i) = trans(hypers.prq);
-      }
-      theta.row(i) = trans(hypers.theta);
-      eta.row(i) = trans(hypers.eta);
-      Zmat.row(i) = trans(Z); // Added xxxxx
-      Z_testmat.row(i) = trans(Z_test); //Added by Lu
-    }
+    
 
     if((i + 1) % opts.num_print == 0) {
       Rcout << "Finishing save " << i + 1 << "\n";
@@ -835,7 +965,7 @@ void TreeBackfit(std::vector<Node*>& forest, arma::vec& Y_hat,
     
     arma::vec Y_star = Y_hat - predict(forest[t], X, hypers);
     arma::vec res = Y - Y_star;
-    
+    // Rcout << "Residual of tree " << t << " is "<< res << "\n";
     if(unif_rand() < MH_PRIOR) {
       // Rcout << "Draw from prior \n";
       forest[t] = draw_prior(forest[t], X, res, weights, hypers);
@@ -850,12 +980,12 @@ void TreeBackfit(std::vector<Node*>& forest, arma::vec& Y_hat,
       perturb_decision_rule(forest[t], X, res, weights, hypers);
       // Rcout << "Done \n";
     }
-    // Rcout << "Inside backfit \n";
 
     if(opts.update_tau) forest[t]->UpdateTau(res, weights, X, hypers);
     forest[t]->UpdateMu(res, weights, X, hypers);
     Y_hat = Y_star + predict(forest[t], X, hypers);
   }
+  // Rcout << "Treebackfitting done \n";
 }
 
 double activation(double x, double c, double tau) {
@@ -1519,7 +1649,7 @@ List SoftBart(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
               double alpha_shape_1, double alpha_shape_2, double tau_rate,
               double num_tree_prob,
               double temperature, const arma::vec& weights, arma::vec& theta,
-              bool sim, bool sparse, int num_burn,
+              bool sim, bool sparse, bool sim_cov, int num_burn,
               int num_thin, int num_save, double theta_width, int num_print, 
               int num_update_theta, int expTrue, double update_theta_width, 
               bool update_sigma_mu,
@@ -1534,13 +1664,56 @@ List SoftBart(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
                        update_tau, update_tau_mean, update_num_tree,
                        update_sigma);
   
-   // Rcout << "Doing Hyper\n";
+  // Rcout << "Doing Hyper\n";
   Hypers hypers = InitHypers(X, X_test, group, sigma_hat, alpha, beta, gamma, k, width,
                              shape, num_tree, alpha_scale, alpha_shape_1,
                              alpha_shape_2, tau_rate, num_tree_prob, temperature, theta, sim,
-                             sparse, prq, M1, M2);
+                             sparse, sim_cov, prq, M1, M2);
 
-  // Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
+  Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
+  return do_soft_bart(X, Y, weights, X_test, hypers, opts);
+  // List out;
+  // out["Y"] = Y;
+  // out["X"] = X;
+  // out["Z"] = hypers.Z;
+  // out["theta"] = hypers.theta;
+  // out["eta"] = hypers.eta;
+  // return out;
+  
+}
+
+// [[Rcpp::export]]
+List SoftBart_cov(const arma::mat& X, const arma::vec& Y, const arma::mat& X_test,
+              const arma::mat& V, const arma::mat& V_test,
+              const arma::uvec& group,
+              double alpha, double beta, double gamma, double sigma,
+              double shape, double width, int num_tree,
+              double sigma_hat, double k, double alpha_scale,
+              double alpha_shape_1, double alpha_shape_2, double tau_rate,
+              double num_tree_prob,
+              double temperature, const arma::vec& weights, arma::vec& theta,
+              bool sim, bool sparse, bool sim_cov, int num_burn,
+              int num_thin, int num_save, double theta_width, int num_print, 
+              int num_update_theta, int expTrue, double update_theta_width, 
+              bool update_sigma_mu,
+              bool update_s, bool update_alpha, bool update_beta, bool update_gamma,
+              bool update_tau, bool update_tau_mean, bool update_num_tree,
+              bool update_sigma, arma::vec prq, double M1, double M2) {
+  
+  // Rcout << "Doing Opts\n";
+  Opts opts = InitOpts(num_burn, num_thin, theta_width, num_save, num_print,
+                       num_update_theta, expTrue, update_theta_width, update_sigma_mu,
+                       update_s, update_alpha, update_beta, update_gamma,
+                       update_tau, update_tau_mean, update_num_tree,
+                       update_sigma);
+  
+  // Rcout << "Doing Hyper\n";
+  Hypers hypers = InitHypers_cov(X, X_test, V, V_test, group, sigma_hat, alpha, beta, gamma, k, width,
+                             shape, num_tree, alpha_scale, alpha_shape_1,
+                             alpha_shape_2, tau_rate, num_tree_prob, temperature, theta, sim,
+                             sparse, sim_cov, prq, M1, M2);
+  
+  Rcout << "\nIn SoftBart before do_soft_bart sim = " << sim << "\n";
   return do_soft_bart(X, Y, weights, X_test, hypers, opts);
   // List out;
   // out["Y"] = Y;
@@ -2192,7 +2365,8 @@ arma::vec theta2eta(const Hypers& hypers) {
 
 // X is X, not Z
 void GetSuffStats_Theta(const std::vector<Node*>& forest, const arma::vec& y, const arma::vec& weights,
-                        const arma::mat& X, const Hypers& hypers,
+                        const arma::mat& X, const arma::mat& X_test, 
+                        const Hypers& hypers,
                         arma::vec& mu_hat, arma::mat& Omega_inv) {
   
   int m = hypers.num_tree;
@@ -2204,6 +2378,14 @@ void GetSuffStats_Theta(const std::vector<Node*>& forest, const arma::vec& y, co
   }  
   
   arma::mat Z = X * theta2eta(hypers); // Compute single index
+  arma::mat Z_test = X_test * theta2eta(hypers);
+  arma::mat Z_trans = quantile_normalize_bart(join_cols(Z, Z_test));
+  Z = Z_trans.rows(0, N-1);
+  arma::mat Z_save = Z;
+  if(hypers.sim_cov){
+    arma::mat V = hypers.V;
+    Z = join_rows(Z,V);
+  }
   
   // Declare phi and index outside the loop
   arma::vec phi(total_num_leaves, arma::fill::zeros);
@@ -2229,7 +2411,9 @@ void GetSuffStats_Theta(const std::vector<Node*>& forest, const arma::vec& y, co
     b += y(i) * phi;
     Omega_invtemp += phi * phi.t();
   }
-  
+  if(hypers.sim_cov){
+    Z = Z_save;
+  }
   // Update b and Omega_inv
   b /= pow(hypers.sigma, 2);
   Omega_invtemp /= pow(hypers.sigma, 2);
@@ -2242,7 +2426,7 @@ void GetSuffStats_Theta(const std::vector<Node*>& forest, const arma::vec& y, co
 // Compute marginal likelihood p(y; theta,tau,sigma)
 // X is X, not Z
 double LogLT_Theta(const std::vector<Node*>& forest, const arma::vec& Y, const arma::vec& weights,
-                   const arma::mat& X, Hypers& hypers) {
+                   const arma::mat& X, const arma::mat& X_test, Hypers& hypers) {
   
   int total_num_leaves = 0;
   for (unsigned int t = 0; t < forest.size(); t++) {
@@ -2252,7 +2436,7 @@ double LogLT_Theta(const std::vector<Node*>& forest, const arma::vec& Y, const a
   // Get sufficient statistics
   arma::vec mu_hat = zeros<vec>(total_num_leaves);
   arma::mat Omega_inv = zeros<mat>(total_num_leaves, total_num_leaves);
-  GetSuffStats_Theta(forest, Y, weights, X, hypers, mu_hat, Omega_inv);
+  GetSuffStats_Theta(forest, Y, weights, X, X_test, hypers, mu_hat, Omega_inv);
   
   
   // Rcout << "Compute ";
@@ -2271,12 +2455,13 @@ double LogLT_Theta(const std::vector<Node*>& forest, const arma::vec& Y, const a
 
 // X is X, not Z
 double loglik_Theta(const std::vector<Node*>& forest, arma::vec theta_new, const arma::mat& X,
+                    const arma::mat& X_test, 
                     const arma::vec& Y, const arma::vec& weights,
                     Hypers& hypers) {
   
   arma::vec theta_old = hypers.theta;
   hypers.SetTheta(theta_new);
-  double out = LogLT_Theta(forest, Y, weights, X, hypers);
+  double out = LogLT_Theta(forest, Y, weights, X, X_test, hypers);
   hypers.SetTheta(theta_old);
   return out;
 }
@@ -2331,8 +2516,8 @@ void Hypers::UpdateTheta(const std::vector<Node*>& forest,
   // Rcout << "\ntheta old = " << theta_old << "\n";
   // Rcout << "\ntheta new = " << theta_new << "\n";
   
-  double loglik_new = loglik_Theta(forest, theta_new, X, Y, weights, hypers);
-  double loglik_old = loglik_Theta(forest, theta_old, X, Y, weights, hypers);
+  double loglik_new = loglik_Theta(forest, theta_new, X, X_test, Y, weights, hypers);
+  double loglik_old = loglik_Theta(forest, theta_old, X, X_test, Y, weights, hypers);
 
   bool accept_mh = do_mh(loglik_new, loglik_old, new_to_old, old_to_new);
   
@@ -2394,12 +2579,12 @@ void Hypers::UpdateTheta_sparse(const std::vector<Node*>& forest,
     thetap = 1.0 - fabs(theta_old(j)-M_PI/2)/(M_PI/2);
     sh1 = (1-delta(j)) * M1 + delta(j);
     sh2 = (1-delta(j)) * M2 + delta(j);
-    lprior_old = lprior_old + log_dbeta(thetap, sh1, sh2);
+    lprior_old = lprior_old + logpdf_beta(thetap, sh1, sh2);
     // Rcout << "Old theta - "<< j+1 << ": " << theta_old(j)<< 
     //   " standardized as " << thetap << " with prior " <<
     //   log_dbeta(thetap, sh1, sh2)<< "\n";
     thetap = 1.0 - fabs(theta_new(j)-M_PI/2)/(M_PI/2);
-    lprior_new = lprior_new + log_dbeta(thetap, sh1, sh2);
+    lprior_new = lprior_new + logpdf_beta(thetap, sh1, sh2);
     
     // Rcout << "New theta - "<< j+1 << ": " << theta_new(j) << 
     //   " standardized as " << thetap << " with prior " <<
@@ -2420,8 +2605,8 @@ void Hypers::UpdateTheta_sparse(const std::vector<Node*>& forest,
   // Rcout << "\ntheta old = " << theta_old << "\n";
   // Rcout << "\ntheta new = " << theta_new << "\n";
   
-  double loglik_new = loglik_Theta(forest, theta_new, X, Y, weights, hypers);
-  double loglik_old = loglik_Theta(forest, theta_old, X, Y, weights, hypers);
+  double loglik_new = loglik_Theta(forest, theta_new, X, X_test, Y, weights, hypers);
+  double loglik_old = loglik_Theta(forest, theta_old, X, X_test, Y, weights, hypers);
   
   bool accept_mh = do_mh_prior(loglik_new, loglik_old, new_to_old, old_to_new,
                          lprior_new, lprior_old);
@@ -2464,7 +2649,7 @@ void Hypers::UpdateDelta() {
   
   for(int i = 0; i < len1; i ++){
     /* This step updates*/
-    prp(i) = prq(i)/(prq(i) + (1-prq(i)) * dbeta(thetap(i), M2, M1));
+    prp(i) = prq(i)/(prq(i) + (1-prq(i)) * dbeta_c(thetap(i), M2, M1));
   }
   delta = sampleBernoulli(prp);
   

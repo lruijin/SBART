@@ -27,9 +27,12 @@ struct Hypers {
   arma::vec delta;
   arma::vec Z;
   arma::vec Z_test;
+  arma::mat V;
+  arma::mat V_test;
   arma::vec logs;
   arma::uvec group;
   bool sim;
+  bool sim_cov;
   bool sparse;
   arma::vec prq;
   double M1;
@@ -237,7 +240,8 @@ Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save,
               int num_print, int num_update_theta, int expTrue, double update_theta_width,
               bool update_sigma_mu, bool update_s, bool update_alpha,
               bool update_beta, bool update_gamma, bool update_tau,
-              bool update_tau_mean, bool update_num_tree, bool update_sigma);
+              bool update_tau_mean, bool update_num_tree, bool update_sigma,
+              bool sim_cov);
 
 // Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, const uvec& group, double sigma_hat, double alpha, double beta,
 //                   double gamma, double k, double width, double shape,
@@ -245,27 +249,38 @@ Opts InitOpts(int num_burn, int num_thin, double theta_width, int num_save,
 //                   double alpha_shape_2, double tau_rate, double num_tree_prob,
 //                   double temperature, bool sim);
 
-Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, const arma::uvec& group, double sigma_hat,
+Hypers InitHypers(const arma::mat& X, const arma::mat& X_test, 
+                  const arma::mat& V, const arma::mat& V_test, 
+                  const arma::uvec& group, double sigma_hat,
                   double alpha, double beta,
                   double gamma, double k, double width, double shape,
                   int num_tree, double alpha_scale, double alpha_shape_1,
                   double alpha_shape_2, double tau_rate, double num_tree_prob,
                   double temperature, arma::vec theta, bool sim,
-                  bool sparse, arma::vec prq, double M1, double M2);
+                  bool sparse, bool sim_cov, arma::vec prq, double M1, double M2);
+Hypers InitHypers_cov(const arma::mat& X, const arma::mat& X_test,
+               const arma::mat& V, const arma::mat& V_test,
+               const arma::uvec& group, double sigma_hat,
+               double alpha, double beta,
+               double gamma, double k, double width, double shape,
+               int num_tree, double alpha_scale, double alpha_shape_1,
+               double alpha_shape_2, double tau_rate, double num_tree_prob,
+               double temperature, arma::vec theta, bool sim, bool sparse,
+               bool sim_cov, arma::vec prq, double M1, double M2); 
 
 void GetSuffStats(Node* n, const arma::vec& y, const arma::vec& weights,
                   const arma::mat& X, const Hypers& hypers,
                   arma::vec& mu_hat_out, arma::mat& Omega_inv_out);
 
 void GetSuffStats_Theta(const std::vector<Node*>& forest, const arma::vec& y, const arma::vec& weights,
-                        const arma::mat& X, const Hypers& hypers,
-                        arma::vec& mu_hat, arma::mat& Omega_inv);
+                        const arma::mat& X, const arma::mat& X_test, 
+                        const Hypers& hypers, arma::vec& mu_hat, arma::mat& Omega_inv);
 
 double LogLT(Node* n, const arma::vec& Y, const arma::vec& weights,
              const arma::mat& X, const Hypers& hypers);
 
 double LogLT_Theta(const std::vector<Node*>& forest, const arma::vec& Y, const arma::vec& weights,
-                   const arma::mat& X, Hypers& hypers);
+                   const arma::mat& X, const arma::mat& X_test, Hypers& hypers);
 
 double cauchy_jacobian(double tau, double sigma_hat);
 
@@ -301,6 +316,7 @@ arma::vec theta_proposal(arma::vec mode, const double& s);
 //                         Hypers& hypers);
 
 double loglik_Theta(const std::vector<Node*>& forest, double theta_new, const arma::mat& X,
+                    const arma::mat& X_test, 
                     const arma::vec& Y, const arma::vec& weights,
                     const Hypers& hypers);
 

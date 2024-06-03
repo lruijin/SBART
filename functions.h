@@ -114,7 +114,7 @@ arma::mat quantile_normalize_bart(arma::mat X) {
  */
 
 // [[Rcpp::export]]
-double dbeta(double theta, double alpha, double beta){
+double dbeta_c(double theta, double alpha, double beta){
   double res = 0.0;
   if(theta >= 0 && theta <= 1){
     res = pow(theta, alpha - 1) * pow(1 - theta, beta - 1) * 
@@ -122,11 +122,6 @@ double dbeta(double theta, double alpha, double beta){
   }
   
   return(res);
-}
-
-// [[Rcpp::export]]
-double log_dbeta(double theta, double alpha, double beta){
-  return(log(dbeta(theta, alpha, beta)));
 }
 
 /* This function is used to sample for Bernoulli distribution from a vector of 
